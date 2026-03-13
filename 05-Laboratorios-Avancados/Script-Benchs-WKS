@@ -1,0 +1,79 @@
+# ==============================================================================
+# SCRIPT DE HARDENING - WINDOWS 11 (BASEADO EM CIS BENCHMARK L1/L2)
+# Documentação: Projeto de Posture e SIEM
+# ==============================================================================
+
+# 1 e 2. Políticas de Senha e Bloqueio de Conta [cite: 1]
+# Define tamanho mínimo de 14 caracteres, histórico e bloqueio contra força bruta[cite: 1, 2].
+Write-Host "Aplicando politicas de Senha e Bloqueio de conta..." -ForegroundColor Green
+[cite_start]net accounts /minpwlen:14 /maxpwage:365 /minpwage:1 /uniquepw:24 /lockoutthreshold:5 /lockoutduration:15 /lockoutwindow:15 [cite: 2]
+
+
+# 3. Opções de Segurança e Acesso Local
+Write-Host "Configurando limites de inatividade e desabilitando conta Convidado..." -ForegroundColor Green
+
+# Limite de Inatividade da Máquina (15 minutos)[cite: 3].
+[cite_start]Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "InactivityTimeoutSecs" -Value 900 -Type DWord [cite: 3]
+
+# Desabilitar a conta Guest (Convidado)[cite: 4].
+[cite_start]Disable-LocalUser -Name "Guest" -ErrorAction SilentlyContinue [cite: 4]
+
+
+# 4. Windows Defender Firewall
+Write-Host "Configurando perfis do Firewall e habilitando Logs..." -ForegroundColor Green
+
+# Habilitar o Firewall e bloquear entrada por padrão[cite: 5].
+[cite_start]Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled True -DefaultInboundAction Block [cite: 5]
+
+# Configurar logs do Firewall (Tamanho 16MB)[cite: 6].
+[cite_start]Set-NetFirewallProfile -Profile Domain,Private,Public -LogAllowed True -LogBlocked True -LogMaxSizeKilobytes 16384 [cite: 6]
+
+
+# 5. Configurações de Rede e Compartilhamento (Cliente SMB)
+Write-Host "Aplicando seguranca nas comunicacoes SMB..." -ForegroundColor Green
+
+# Assinar comunicações digitalmente (RequireSecuritySignature)[cite: 7].
+[cite_start]Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name "RequireSecuritySignature" -Value 1 -Type DWord [cite: 7]
+
+# Desativar envio de senhas em texto plano[cite: 8].
+[cite_start]Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name "EnablePlainTextPassword" -Value 0 -Type DWord [cite: 8]
+
+
+# 6. Privacidade e Telemetria
+Write-Host "Limitando o envio de Dados de Diagnostico (Telemetria)..." -ForegroundColor Green
+
+$TelemetryPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection"
+if (-not (Test-Path $TelemetryPath)) { New-Item -Path $TelemetryPath -Force | [cite_start]Out-Null } [cite: 9]
+
+# Definir Telemetria para o nível mínimo obrigatório[cite: 10].
+[cite_start]Set-ItemProperty -Path $TelemetryPath -Name "AllowTelemetry" -Value 1 -Type DWord [cite: 10]
+
+
+# 7. Políticas de Auditoria Avançada (Fundamental para SIEM/Wazuh)
+Write-Host "Configurando Auditoria Avancada via AuditPol..." -ForegroundColor Green
+
+# Forçar a subcategoria de auditoria a sobrescrever configurações antigas.
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "SCENoApplyLegacyAuditPolicy" -Value 1 -Type DWord
+
+# Validação de Credenciais (Sucesso e Falha)[cite: 11].
+[cite_start]auditpol /set /subcategory:"Credential Validation" /success:enable /failure:enable [cite: 11]
+
+# Eventos de Logon (Sucesso e Falha)[cite: 12].
+[cite_start]auditpol /set /subcategory:"Logon" /success:enable /failure:enable [cite: 12]
+
+# Criação de Processos (Rastreamento de execução de programas).
+[cite_start]auditpol /set /subcategory:"Process Creation" /success:enable [cite: 13]
+
+
+# 8. Mitigação de Exploits (DEP, ASLR e Execução de Scripts)
+Write-Host "Configurando mitigacoes de exploit e politicas de execucao..." -ForegroundColor Green
+
+# DEP (Data Execution Prevention) e ASLR (Address Space Layout Randomization)
+Set-ProcessMitigation -Policy DEP -Enable -System
+Set-ProcessMitigation -Policy ASLR -Enable -System
+
+# Restringir execução de scripts remotos não assinados
+Set-ExecutionPolicy RemoteSigned -Force
+
+
+Write-Host "Script concluido com sucesso! Reinicie a maquina para aplicar as mudancas." [cite_start]-ForegroundColor Cyan [cite: 14]
